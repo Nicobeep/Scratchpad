@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scratchpad</title>
+  <style>
+    :root {
+      --bg: #f7f7f5;
+      --panel: #ffffff;
+      --text: #1f2328;
+      --muted: #6b7280;
+      --border: #e2e2dd;
+      --accent: #2f6fed;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #16181c;
+        --panel: #1e2126;
+        --text: #e6e8eb;
+        --muted: #9aa1ab;
+        --border: #2e3238;
+        --accent: #6c9bff;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    h1 { font-size: 1.05rem; margin: 0; font-weight: 600; }
+    .actions { display: flex; gap: 8px; }
+    button {
+      font: inherit;
+      font-size: 0.85rem;
+      color: var(--text);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); color: var(--accent); }
+    main {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 16px;
+      min-height: 0;
+      overflow-y: auto;
+    }
+    textarea {
+      width: 100%;
+      max-width: 560px;
+      height: 55vh;
+      min-height: 160px;
+      resize: vertical;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 1rem;
+      line-height: 1.6;
+      padding: 16px;
+      outline: none;
+    }
+    textarea:focus { border-color: var(--accent); }
+    footer {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 592px;
+      margin: 0 auto;
+      padding: 8px 16px 12px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    #status.saved { color: #2e9d5b; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Scratchpad</h1>
+    <div class="actions">
+      <button id="download" type="button">Download .txt</button>
+      <button id="clear" type="button">Clear</button>
+    </div>
+  </header>
+
+  <main>
+    <textarea id="pad" placeholder="Start typing. Everything is saved automatically in this browser." autofocus spellcheck="true"></textarea>
+  </main>
+
+  <footer>
+    <span id="stats">0 words · 0 characters</span>
+    <span id="status">Ready</span>
+  </footer>
+
+  <script>
+    (function () {
+      const KEY = "scratchpad:note";
+      const pad = document.getElementById("pad");
+      const stats = document.getElementById("stats");
+      const status = document.getElementById("status");
+      let timer = null;
+
+      function load() {
+        try { return localStorage.getItem(KEY) || ""; }
+        catch (e) { return ""; }
+      }
+
+      function save() {
+        try {
+          localStorage.setItem(KEY, pad.value);
+          const time = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+          setStatus("Saved at " + time, true);
+        } catch (e) {
+          setStatus("Could not save (storage unavailable or full)", false);
+        }
+      }
+
+      function setStatus(text, ok) {
+        status.textContent = text;
+        status.className = ok ? "saved" : "";
+      }
+
+      function updateStats() {
+        const text = pad.value;
+        const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+        stats.textContent = words + " word" + (words === 1 ? "" : "s") +
+          " · " + text.length + " character" + (text.length === 1 ? "" : "s");
+      }
+
+      // Restore saved note on load
+      pad.value = load();
+      updateStats();
+      if (pad.value) setStatus("Restored your note", true);
+
+      // Autosave shortly after the user stops typing
+      pad.addEventListener("input", function () {
+        updateStats();
+        setStatus("Saving…", false);
+        clearTimeout(timer);
+        timer = setTimeout(save, 400);
+      });
+
+      // Make sure nothing is lost when the tab is hidden or closed
+      function flush() {
+        clearTimeout(timer);
+        save();
+      }
+      window.addEventListener("beforeunload", flush);
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "hidden") flush();
+      });
+
+      // Keep multiple open tabs in sync
+      window.addEventListener("storage", function (e) {
+        if (e.key === KEY && e.newValue !== pad.value) {
+          pad.value = e.newValue || "";
+          updateStats();
+          setStatus("Updated from another tab", true);
+        }
+      });
+
+      // Download as a text file
+      document.getElementById("download").addEventListener("click", function () {
+        const blob = new Blob([pad.value], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "scratchpad.txt";
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+
+      // Clear with confirmation
+      document.getElementById("clear").addEventListener("click", function () {
+        if (!pad.value || confirm("Clear the whole scratchpad? This can't be undone.")) {
+          pad.value = "";
+          updateStats();
+          save();
+          pad.focus();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
